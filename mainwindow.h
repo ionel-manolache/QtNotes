@@ -6,8 +6,13 @@
 #include <QObject>
 #include <QMap>
 
+#include "note.h"
+
 class QTextEdit;
-class QListWidget;
+class QListView;
+
+class FoldersModel;
+class NotesModel;
 
 class MainWindow : public QMainWindow
 {
@@ -21,16 +26,24 @@ private slots:
     void onOpen();
     void onSaveAs();
 
+    //void onCurrentItemChanged(QListWidgetItem* current, QListWidgetItem* previous);
+
 private:
+    void onNotesListClicked(const QModelIndex &clickedIndex);
     void saveToFile(QString fileName);
     void loadFromFile(QString fileName);
+
+    void updateUIAfterLoadingFromFile();
 
 private:
     QTextEdit* m_edit;
     QString m_notesFile;
-    QListWidget *m_notesListWidget;
 
-    QMap<QString, QString> m_notes;
+    QListView *m_foldersListView;
+    QListView *m_notesListView;
+    FoldersModel *m_foldersModel;
+    NotesModel *m_notesModel;
+    Note m_currentNote;
 };
 
 #endif // MAINWINDOW_H

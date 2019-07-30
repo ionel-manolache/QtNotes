@@ -25,11 +25,19 @@ DEFINES += QT_DEPRECATED_WARNINGS
 CONFIG += c++11
 
 SOURCES += \
+        folder.cpp \
+        foldersmodel.cpp \
         main.cpp \
-        mainwindow.cpp
+        mainwindow.cpp \
+        note.cpp \
+        notesmodel.cpp
 
 HEADERS += \
-        mainwindow.h
+        folder.h \
+        foldersmodel.h \
+        mainwindow.h \
+        note.h \
+        notesmodel.h
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin

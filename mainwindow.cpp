@@ -1,29 +1,27 @@
 #include "mainwindow.h"
 
 #include <QAction>
-#include <QApplication>
-#include <QMenuBar>
-#include <QTextEdit>
-#include <QHBoxLayout>
-#include <QLayout>
-#include <QObject>
-
-#include <QSplitter>
-#include <QListWidget>
-
-#include <QFile>
-#include <QTextStream>
-
-#include <QMessageBox>
-#include <QFileDialog>
 #include <QDir>
-#include <QXmlStreamWriter>
-#include <QXmlStreamReader>
+#include <QFile>
+#include <QFileDialog>
+#include <QHBoxLayout>
+#include <QInputDialog>
+#include <QListView>
+#include <QMenuBar>
+#include <QSplitter>
+#include <QTextEdit>
+
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+
+#include <QDateTime>
+
+#include <QAbstractItemModel>
+
 #include <QDebug>
 
-#include <QStringListModel>
-
-#include <QInputDialog>
+#include "notesmodel.h"
 
 bool isNullOrEmpty(const QString &string)
 {
@@ -34,16 +32,16 @@ MainWindow::MainWindow(const QString& defaultNotesFile, QWidget *parent)
     : QMainWindow(parent)
     , m_notesFile(defaultNotesFile)
 {
-    //QMenuBar* mBar = menuBar();
-    //QMenu* fileMenu = mBar->addMenu(QStringLiteral("&File"));
+    QMenuBar* mBar = menuBar();
+    QMenu* fileMenu = mBar->addMenu(tr("&File"));
 
-    //QAction* newAction = fileMenu->addAction(QStringLiteral("&New"));
-    //connect(newAction, &QAction::triggered, this, &MainWindow::onNew);
+    QAction* newAction = fileMenu->addAction(tr("&New"));
+    connect(newAction, &QAction::triggered, this, &MainWindow::onNew);
 
-    //QAction* openAction = fileMenu->addAction(QStringLiteral("&Open"));
+    //QAction* openAction = fileMenu->addAction(tr("&Open"));
     //connect(openAction, &QAction::triggered, this, &MainWindow::onOpen);
 
-    //QAction* saveAsAction = fileMenu->addAction(QStringLiteral("&Save As..."));
+    //QAction* saveAsAction = fileMenu->addAction(tr("&Save As..."));
     //connect(saveAsAction, &QAction::triggered, this, &MainWindow::onSaveAs);
 
     QWidget* mainWidget = new QWidget(this);
@@ -55,53 +53,77 @@ MainWindow::MainWindow(const QString& defaultNotesFile, QWidget *parent)
     QSplitter* splitter = new QSplitter(mainWidget);
     mainWidget->layout()->addWidget(splitter);
 
-    m_notesListWidget = new QListWidget(this);
-    splitter->addWidget(m_notesListWidget);
+
+    m_foldersListView = new QListView(this);
+    m_notesListView = new QListView(this);
+    m_foldersModel = new FoldersModel();
+    m_notesModel = new NotesModel();
+    m_foldersListView->setModel(m_foldersModel);
+    m_notesListView->setModel(m_notesModel);
+    splitter->addWidget(m_foldersListView);
+    splitter->addWidget(m_notesListView);
     m_edit = new QTextEdit(this);
     m_edit->setWordWrapMode(QTextOption::WordWrap);
     m_edit->setTabStopDistance(40);
     splitter->addWidget(m_edit);
 
-    splitter->setSizes(QList<int>() << 150 << 500);
+    //connect(m_notesListView, &QListView::currentItemChanged, this, &MainWindow::onCurrentItemChanged);
+    connect(m_notesListView, &QListView::clicked, this, &MainWindow::onNotesListClicked);
+
+    splitter->setSizes(QList<int>() << 150 << 150 << 500);
     splitter->setStretchFactor(0, 0);
-    splitter->setStretchFactor(1, 1);
+    splitter->setStretchFactor(1, 0);
+    splitter->setStretchFactor(2, 1);
     splitter->setHandleWidth(4);
 
-    if (!isNullOrEmpty(m_notesFile))
+    if (!isNullOrEmpty(m_notesFile)) {
+        qDebug() << "Is file loading here???";
         loadFromFile(m_notesFile);
+        updateUIAfterLoadingFromFile();
+        qDebug() << "Should be loaded now... Models should work...";
+    }
 }
 
 MainWindow::~MainWindow()
 {
-    if (!isNullOrEmpty(m_notesFile))
-        saveToFile(m_notesFile);
 }
 
 void MainWindow::onNew()
 {
-    const QString newNoteTitle = QInputDialog::getText(this, QStringLiteral("Title of note"), QStringLiteral("Title of note"));
-    QListWidgetItem* newItem = new QListWidgetItem();
-    newItem->setText(newNoteTitle);
-    m_notesListWidget->addItem(newItem);
-    m_edit->clear();
+    const QString newNoteTitle = QInputDialog::getText(this, tr("Title of note"), tr("Please choose a title for your new note"));
 }
 
 void MainWindow::onOpen()
 {
-    QString fileName = QFileDialog::getOpenFileName(this, QStringLiteral("Open file"), QDir::home().absolutePath());
+    QString fileName = QFileDialog::getOpenFileName(this, tr("Open file"), QDir::home().absolutePath());
     if (fileName.isEmpty())
         return;
 
     loadFromFile(fileName);
+    updateUIAfterLoadingFromFile();
 }
 
 void MainWindow::onSaveAs()
 {
-    QString fileName = QFileDialog::getSaveFileName(this, QStringLiteral("Save file"), QDir::home().absolutePath());
+    QString fileName = QFileDialog::getSaveFileName(this, tr("Save file"), QDir::home().absolutePath());
     if (fileName.isEmpty())
         return;
 
     saveToFile(fileName);
+}
+
+void MainWindow::onNotesListClicked(const QModelIndex &clickedIndex)
+{
+    if (clickedIndex.row() < m_notesModel->noteList().size()) {
+        if (!m_edit->document()->isEmpty()) {
+            m_currentNote.setContents(m_edit->document()->toPlainText());
+            QString currentName = m_currentNote.name();
+            m_notesModel->insertNote(currentName, m_currentNote);
+        }
+
+        m_currentNote = m_notesModel->noteList()[clickedIndex.row()];
+        m_edit->document()->setPlainText(m_currentNote.contents());
+    }
 }
 
 void MainWindow::saveToFile(QString fileName)
@@ -110,24 +132,8 @@ void MainWindow::saveToFile(QString fileName)
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
         return;
 
-    QXmlStreamWriter xmlWriter(&file);
-    xmlWriter.setAutoFormatting(true);
-    xmlWriter.writeStartDocument();
-    {
-        xmlWriter.writeStartElement("notes");
-        {
-            xmlWriter.writeStartElement("note");
-            {
-                xmlWriter.writeAttribute("title", "NoteTitle"); //TODO get Title from left sidebar (QListWidget)
-                for (const QString& line : m_edit->document()->toPlainText().split("\n")) {
-                    xmlWriter.writeTextElement(QStringLiteral("line"), line);
-                }
-            }
-            xmlWriter.writeEndElement();
-        }
-        xmlWriter.writeEndElement();
-    }
-    xmlWriter.writeEndDocument();
+    QJsonDocument jsonDocument(m_foldersModel->toJson());
+    file.write(jsonDocument.toJson());
     file.close();
 }
 
@@ -140,24 +146,19 @@ void MainWindow::loadFromFile(QString fileName)
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
         return;
 
-    QXmlStreamReader xmlReader(&file);
-    if (xmlReader.readNextStartElement()) {
-        if (xmlReader.name() == QStringLiteral("notes")) {
-            xmlReader.readNextStartElement();
-            if (xmlReader.name() == QStringLiteral("note")) {
-                QString title = xmlReader.attributes().value("title").toString();
-                // TODO: Save title of note
-                QString note;
-                while (xmlReader.readNextStartElement() && xmlReader.name() == QStringLiteral("line"))
-                    note += xmlReader.readElementText() + QStringLiteral("\n");
-                m_edit->document()->setPlainText(note);
-            } else {
-                qDebug() << "Should have been 'note' " << xmlReader.name();
-            }
-        } else {
-            qDebug() << "Should have been 'notes' " << xmlReader.name();
-        }
-    } else {
-        qDebug() << "Start element not found?";
-    }
+    QByteArray fileContents = file.readAll();
+
+    QJsonParseError error;
+    QJsonDocument jsonDocument = QJsonDocument::fromJson(fileContents, &error);
+    if (error.error != QJsonParseError::NoError)
+        qDebug() << error.errorString();
+
+    m_foldersModel->fromJson(jsonDocument.object());
+    m_notesModel->setNoteList(m_foldersModel->folderList().first().notes());
+}
+
+void MainWindow::updateUIAfterLoadingFromFile()
+{
+    m_currentNote = m_foldersModel->folderList().first().notes().first();
+    m_edit->document()->setPlainText(m_currentNote.contents());
 }
