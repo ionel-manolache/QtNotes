@@ -21,6 +21,7 @@
 
 #include <QDebug>
 
+#include "foldersmodel.h"
 #include "notesmodel.h"
 
 bool isNullOrEmpty(const QString &string)
